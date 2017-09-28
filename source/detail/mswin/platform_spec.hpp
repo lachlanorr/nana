@@ -1,7 +1,7 @@
 /*
  *	Platform Specification Implementation
  *	Nana C++ Library(http://www.nanapro.org)
- *	Copyright(C) 2003-2016 Jinhao(cnjinhao@hotmail.com)
+ *	Copyright(C) 2003-2017 Jinhao(cnjinhao@hotmail.com)
  *
  *	Distributed under the Boost Software License, Version 1.0. 
  *	(See accompanying file LICENSE_1_0.txt or copy at 
@@ -17,15 +17,15 @@
 #ifndef NANA_DETAIL_PLATFORM_SPEC_HPP
 #define NANA_DETAIL_PLATFORM_SPEC_HPP
 
-#include <nana/deploy.hpp>
 #include <nana/gui/basis.hpp>
 #include <nana/paint/image.hpp>
 #include <nana/gui/detail/event_code.hpp>
 
 #include <windows.h>
-#include <map>
 #include <memory>
 #include <functional>
+
+#include "../platform_abstraction_types.hpp"
 
 namespace nana
 {
@@ -89,62 +89,16 @@ namespace detail
 		};
 	};
 
-	struct font_tag
-	{
-		native_string_type name;
-		unsigned height;
-		unsigned weight;
-		bool italic;
-		bool underline;
-		bool strikeout;
-		HFONT handle;
-
-		struct deleter
-		{
-			void operator()(const font_tag*) const;
-		};
-	};
-
 	struct drawable_impl_type
 	{
-		typedef std::shared_ptr<font_tag> font_ptr_t;
+		using font_type = ::std::shared_ptr<font_interface>;
 
 		HDC		context;
 		HBITMAP	pixmap;
 		pixel_argb_t*	pixbuf_ptr{nullptr};
 		std::size_t		bytes_per_line{0};
-		font_ptr_t font;
 
-		struct pen_spec
-		{
-			HPEN	handle;
-			unsigned color;
-			int style;
-			int width;
-
-			void set(HDC context, int style, int width,unsigned color);
-		}pen;
-
-		struct brush_spec
-		{
-			enum t{Solid, HatchBDiagonal};
-
-			HBRUSH handle;
-			t style;
-			unsigned color;
-
-			void set(HDC context, t style, unsigned color);
-		}brush;
-
-		struct round_region_spec
-		{
-			HRGN handle;
-			nana::rectangle r;
-			unsigned radius_x;
-			unsigned radius_y;
-
-			void set(const nana::rectangle& r, unsigned radius_x, unsigned radius_y);
-		}round_region;
+		font_type font;
 
 		struct string_spec
 		{
@@ -159,14 +113,10 @@ namespace detail
 		drawable_impl_type();
 		~drawable_impl_type();
 
-		void fgcolor(const ::nana::color&);	//deprecated
 		unsigned get_color() const;
 		unsigned get_text_color() const;
 		void set_color(const ::nana::color&);
 		void set_text_color(const ::nana::color&);
-
-		void update_pen();
-		void update_brush();
 	private:
 		unsigned color_{ 0xffffffff };
 		unsigned text_color_{0xffffffff};
@@ -174,8 +124,13 @@ namespace detail
 
 	class platform_spec
 	{
+		platform_spec();
+		platform_spec(const platform_spec&) = delete;
+		platform_spec& operator=(const platform_spec&) = delete;
+
+		platform_spec(platform_spec&&) = delete;
+		platform_spec& operator=(platform_spec&&) = delete;
 	public:
-		typedef drawable_impl_type::font_ptr_t	font_ptr_t;
 		typedef ::nana::event_code event_code;
 		typedef ::nana::native_window_type	native_window_type;
 
@@ -194,21 +149,15 @@ namespace detail
 			::nana::paint::image big_icon;
 		};
 
-		platform_spec();
-
-		const font_ptr_t& default_native_font() const;
-		void default_native_font(const font_ptr_t&);
-		unsigned font_size_to_height(unsigned) const;
-		unsigned font_height_to_size(unsigned) const;
-		font_ptr_t make_native_font(const char* name, unsigned height, unsigned weight, bool italic, bool underline, bool strike_out);
+		~platform_spec();
 
 		static platform_spec& instance();
 
 		void keep_window_icon(native_window_type, const paint::image&sml_icon, const paint::image& big_icon);
 		void release_window_icon(native_window_type);
 	private:
-		font_ptr_t	def_font_ptr_;
-		std::map<native_window_type, window_icons> iconbase_;
+		struct implementation;
+		implementation * const impl_;
 	};
 
 }//end namespace detail

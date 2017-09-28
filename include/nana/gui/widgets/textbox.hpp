@@ -1,7 +1,7 @@
 /**
  *	A Textbox Implementation
  *	Nana C++ Library(http://www.nanapro.org)
- *	Copyright(C) 2003-2016 Jinhao(cnjinhao@hotmail.com)
+ *	Copyright(C) 2003-2017 Jinhao(cnjinhao@hotmail.com)
  *
  *	Distributed under the Boost Software License, Version 1.0.
  *	(See accompanying file LICENSE_1_0.txt or copy at
@@ -80,6 +80,7 @@ namespace nana
 				void mouse_up(graph_reference, const arg_mouse&)	override;
 				void mouse_enter(graph_reference, const arg_mouse&)	override;
 				void mouse_leave(graph_reference, const arg_mouse&)	override;
+				void dbl_click(graph_reference, const arg_mouse&)	override;
 				void key_press(graph_reference, const arg_keyboard&)override;
 				void key_char(graph_reference, const arg_keyboard&)	override;
 				void mouse_wheel(graph_reference, const arg_wheel&)	override;
@@ -100,9 +101,12 @@ namespace nana
 		:public widget_object<category::widget_tag, drawerbase::textbox::drawer, drawerbase::textbox::textbox_events, ::nana::widgets::skeletons::text_editor_scheme>
 	{
 	public:
-		using text_focus_behavior = widgets::skeletons::text_focus_behavior;
+		using colored_area_type = widgets::skeletons::colored_area_type;
+		using colored_area_access_interface = widgets::skeletons::colored_area_access_interface;
 
+		using text_focus_behavior = widgets::skeletons::text_focus_behavior;
 		using text_positions = std::vector<upoint>;
+
 		/// The default constructor without creating the widget.
 		textbox();
 
@@ -134,6 +138,10 @@ namespace nana
 		void store(std::string file);
 		void store(std::string file, nana::unicode encoding);
 
+		colored_area_access_interface* colored_area_access();
+
+		point content_origin() const;
+
 		/// Enables/disables the textbox to indent a line. Idents a new line when it is created by pressing enter.
 		/// @param generator generates text for identing a line. If it is empty, textbox indents the line according to last line.
 		textbox& indention(bool, std::function<std::string()> generator = {});
@@ -162,9 +170,15 @@ namespace nana
         /// Read the text from a specified line. It returns true for success.
 		bool getline(std::size_t pos, std::string&) const;
 
+		/// Read the text from a specified line with a set offset. It returns true for success.
+		bool getline(std::size_t line_index,std::size_t offset,std::string& text) const;
+
 		/// Gets the caret position
 		/// Returns true if the caret is in the area of display, false otherwise.
 		bool caret_pos(point& pos, bool text_coordinate) const;
+
+		/// Gets the caret position, in text coordinate
+		upoint caret_pos() const;
 
 		/// Sets the caret position with a text position
 		textbox& caret_pos(const upoint&);
@@ -184,6 +198,9 @@ namespace nana
 		bool editable() const;
 		textbox& editable(bool);
 
+		/// Enables the caret if the textbox currently is not editable
+		textbox& enable_caret();
+
 		void set_accept(std::function<bool(wchar_t)>);
 
 		textbox& tip_string(::std::string);
@@ -193,9 +210,16 @@ namespace nana
 
         /// Returns true if some text is selected.
 		bool selected() const;
+		bool get_selected_points(nana::upoint &a, nana::upoint &b) const;
 
         /// Selects/unselects all text.
 		void select(bool);
+
+		/// Returns the bounds of a text selection
+		/**
+		 * @return no selection if pair.first == pair.second.
+		 */
+		std::pair<upoint, upoint> selection() const;
 
 		void copy() const;  ///< Copies the selected text into shared memory, such as clipboard under Windows.
 		void paste();       ///< Pastes the text from shared memory.
@@ -206,11 +230,16 @@ namespace nana
 		textbox& from(int);
 		textbox& from(double);
 
+		void clear_undo();
+
 		void set_highlight(const std::string& name, const ::nana::color& fgcolor, const ::nana::color& bgcolor);
 		void erase_highlight(const std::string& name);
 		void set_keywords(const std::string& name, bool case_sensitive, bool whole_word_match, std::initializer_list<std::wstring> kw_list);
 		void set_keywords(const std::string& name, bool case_sensitive, bool whole_word_match, std::initializer_list<std::string> kw_list_utf8);
 		void erase_keyword(const std::string& kw);
+
+		/// Sets the text alignment
+		textbox& text_align(::nana::align alignment);
 
 		/// Returns the text position of each line that currently displays on screen.
 		text_positions text_position() const;
@@ -228,6 +257,23 @@ namespace nana
 		/// E.g. Whether caret moves to left of selected content or moves to left of last position when left arrow key is pressed.
 		/// @param move_to_end determines whether to move caret to left of selected_content or to left of last position.
 		void select_behavior(bool move_to_end);
+
+		/// Sets the undo/redo queue length
+		/**
+		 * @param len The length of the queue. If this parameter is zero, the undo/redo is disabled.
+		 */
+		void set_undo_queue_length(std::size_t len);
+
+		/// Returns the number of lines that text are displayed in the screen.
+		/**
+		 * The number of display lines may be not equal to the number of text lines when the textbox
+		 * is line wrapped mode.
+		 * @return the number of lines that text are displayed in the screen.
+		 */
+		std::size_t display_line_count() const noexcept;
+
+		/// Returns the number of text lines.
+		std::size_t text_line_count() const noexcept;
 	protected:
 		//Overrides widget's virtual functions
 		native_string_type _m_caption() const throw() override;

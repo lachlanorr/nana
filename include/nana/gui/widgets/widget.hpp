@@ -1,7 +1,7 @@
 /**
  *	The fundamental widget class implementation
  *	Nana C++ Library(http://www.nanapro.org)
- *	Copyright(C) 2003-2016 Jinhao(cnjinhao@hotmail.com)
+ *	Copyright(C) 2003-2017 Jinhao(cnjinhao@hotmail.com)
  *
  *	Distributed under the Boost Software License, Version 1.0. 
  *	(See accompanying file LICENSE_1_0.txt or copy at 
@@ -28,13 +28,24 @@ namespace nana
 
 	/// Abstract class for defining the capacity interface.
 	class widget
-		: nana::noncopyable, nana::nonmovable
 	{
 		friend class detail::widget_notifier_interface;
 		class inner_widget_notifier;
 		typedef void(*dummy_bool_type)(widget* (*)(const widget&));
+
+		
+		//Noncopyable
+		widget(const widget&) = delete;
+		widget& operator=(const widget&) = delete;
+
+		//Nonmovable
+		widget(widget&&) = delete;
+		widget& operator=(widget&&) = delete;
+		
 	public:
 		using native_string_type = detail::native_string_type;
+
+		widget() = default;
 
 		virtual ~widget() = default;
 		virtual window handle() const = 0;			///< Returns the handle of window, returns 0 if window is not created.
@@ -53,7 +64,7 @@ namespace nana
 		template<typename ...Args>
 		void i18n(std::string msgid, Args&&... args)
 		{
-			_m_caption(nana::internationalization().get(msgid, std::forward<Args>(args)...));
+			_m_caption(::nana::to_nstring(::nana::internationalization().get(msgid, std::forward<Args>(args)...)));
 		}
 
 		void i18n(i18n_eval);
@@ -147,11 +158,9 @@ namespace nana
 			: public widget
 		{
 		public:
-			~widget_base();
-
 			window handle() const override;
-		private:
-			void _m_notify_destroy() override final;
+		protected:
+			void _m_notify_destroy() override;
 		protected:
 			window handle_{ nullptr };
 		};
@@ -171,6 +180,11 @@ namespace nana
 			:	events_{ std::make_shared<Events>() },
 				scheme_{ API::dev::make_scheme<Scheme>() }
 		{}
+
+		~widget_object()
+		{
+			API::close_window(handle());
+		}
 
 		event_type& events() const
 		{
@@ -192,7 +206,7 @@ namespace nana
 				API::dev::attach_drawer(*this, trigger_);
 				if(visible)
 					API::show_window(handle_, true);
-				
+
 				this->_m_complete_creation();
 			}
 			return (this->empty() == false);
@@ -213,6 +227,39 @@ namespace nana
 		{
 			return *scheme_;
 		}
+
+		// disables or re-enables internal handling of event within base-widget
+		void filter_event(const event_code evt_code, const bool bDisabled)
+		{
+			trigger_.filter_event(evt_code, bDisabled);
+		}
+
+		void filter_event(const std::vector<event_code> evt_codes, const bool bDisabled)
+		{
+			trigger_.filter_event(evt_codes, bDisabled);
+		}
+
+		void filter_event(const event_filter_status& evt_all_states)
+		{
+			trigger_.filter_event(evt_all_states);
+		}
+
+		void clear_filter()
+		{
+			trigger_.clear_filter();
+		}
+
+		// reads status of if event is filtered
+		bool filter_event(const event_code evt_code)
+		{
+			return trigger_.filter_event(evt_code);
+		}
+
+		event_filter_status filter_event()
+		{
+			return trigger_.filter_event();
+		}
+
 	protected:
 		DrawerTrigger& get_drawer_trigger()
 		{
@@ -227,6 +274,12 @@ namespace nana
 		general_events& _m_get_general_events() const override
 		{
 			return *events_;
+		}
+
+		void _m_notify_destroy() override final
+		{
+			widget_base::_m_notify_destroy();
+			events_ = std::make_shared<Events>();
 		}
 	private:
 		DrawerTrigger trigger_;
@@ -247,6 +300,11 @@ namespace nana
 		widget_object()
 			: events_{ std::make_shared<Events>() }, scheme_{ API::dev::make_scheme<scheme_type>() }
 		{}
+
+		~widget_object()
+		{
+			API::close_window(handle());
+		}
 
 		event_type& events() const
 		{
@@ -281,6 +339,12 @@ namespace nana
 		{
 			return *events_;
 		}
+
+		void _m_notify_destroy() override final
+		{
+			widget_base::_m_notify_destroy();
+			events_ = std::make_shared<Events>();
+		}
 	private:
 		std::shared_ptr<Events> events_;
 		std::unique_ptr<scheme_type> scheme_;
@@ -298,21 +362,19 @@ namespace nana
 		using event_type = Events;
 
 		widget_object()
+			: widget_object(nullptr, false, API::make_center(300, 150), appearance(), this)
 		{
-			handle_ = API::dev::create_window(nullptr, false, API::make_center(300, 150), appearance(), this);
-			_m_bind_and_attach();
-		}
-
-		widget_object(const rectangle& r, const appearance& apr = {})
-		{
-			handle_ = API::dev::create_window(nullptr, false, r, apr, this);
-			_m_bind_and_attach();
 		}
 
 		widget_object(window owner, bool nested, const rectangle& r = {}, const appearance& apr = {})
 		{
 			handle_ = API::dev::create_window(owner, nested, r, apr, this);
 			_m_bind_and_attach();
+		}
+
+		~widget_object()
+		{
+			API::close_window(handle());
 		}
 
 		event_type& events() const
@@ -415,6 +477,12 @@ namespace nana
 		{
 			return *events_;
 		}
+
+		void _m_notify_destroy() override final
+		{
+			widget_base::_m_notify_destroy();
+			events_ = std::make_shared<Events>();
+		}
 	private:
 		DrawerTrigger					trigger_;
 		std::shared_ptr<Events>			events_;
@@ -439,6 +507,11 @@ namespace nana
 		widget_object()
 			: events_{ std::make_shared<Events>() }, scheme_{ API::dev::make_scheme<scheme_type>() }
 		{}
+
+		~widget_object()
+		{
+			API::close_window(handle());
+		}
 
 		event_type& events() const
 		{

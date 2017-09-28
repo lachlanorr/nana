@@ -1,7 +1,7 @@
 /*
 *	Window Layout Implementation
 *	Nana C++ Library(http://www.nanapro.org)
-*	Copyright(C) 2003-2016 Jinhao(cnjinhao@hotmail.com)
+*	Copyright(C) 2003-2017 Jinhao(cnjinhao@hotmail.com)
 *
 *	Distributed under the Boost Software License, Version 1.0.
 *	(See accompanying file LICENSE_1_0.txt or copy at
@@ -22,26 +22,26 @@ namespace nana
 	namespace detail
 	{
 		//class window_layout
-			void window_layout::paint(core_window_t* wd, bool is_redraw, bool is_child_refreshed)
+			void window_layout::paint(core_window_t* wd, paint_operation operation, bool req_refresh_children)
 			{
-				if (is_redraw && wd->flags.refreshing)
+				if (wd->flags.refreshing && (paint_operation::try_refresh == operation))
 					return;
 
 				if (nullptr == wd->effect.bground)
 				{
-					if (is_redraw && (!wd->drawer.graphics.empty()))
+					if ((paint_operation::try_refresh == operation) && (!wd->drawer.graphics.empty()))
 					{
 						wd->flags.refreshing = true;
 						wd->drawer.refresh();
 						wd->flags.refreshing = false;
 					}
-					maproot(wd, is_redraw, is_child_refreshed);
+					maproot(wd, (paint_operation::none != operation), req_refresh_children);
 				}
 				else
-					_m_paint_glass_window(wd, is_redraw, is_child_refreshed, false, true);
+					_m_paint_glass_window(wd, (paint_operation::try_refresh == operation), req_refresh_children, false, true);
 			}
 
-			bool window_layout::maproot(core_window_t* wd, bool have_refreshed, bool is_child_refreshed)
+			bool window_layout::maproot(core_window_t* wd, bool have_refreshed, bool req_refresh_children)
 			{
 				auto check_opaque = wd->seek_non_lite_widget_ancestor();
 				if (check_opaque && check_opaque->flags.refreshing)
@@ -56,7 +56,7 @@ namespace nana
 					if (category::flags::lite_widget != wd->other.category)
 						graph.bitblt(vr, wd->drawer.graphics, nana::point(vr.x - wd->pos_root.x, vr.y - wd->pos_root.y));
 
-					_m_paste_children(wd, is_child_refreshed, have_refreshed, vr, graph, nana::point());
+					_m_paste_children(wd, have_refreshed, req_refresh_children, vr, graph, nana::point());
 
 					if (wd->parent)
 					{
@@ -81,11 +81,11 @@ namespace nana
 									graph.bitblt(el.r, (el.window->drawer.graphics), p_src);
 								}
 
-								_m_paste_children(el.window, is_child_refreshed, false, el.r, graph, nana::point{});
+								_m_paste_children(el.window, false, req_refresh_children, el.r, graph, nana::point{});
 							}
 						}
 					}
-					_m_notify_glasses(wd, vr);
+					_m_notify_glasses(wd);
 					return true;
 				}
 				return false;
@@ -114,9 +114,32 @@ namespace nana
 						return false;
 				}
 
-				for (auto* parent = wd->parent; parent; parent = parent->parent)
+				for (auto parent = wd->parent; parent; parent = parent->parent)
 				{
-					overlap(rectangle{ parent->pos_root, parent->dimension }, visual, visual);
+					if (category::flags::root == parent->other.category)
+					{
+						//visual rectangle of wd's parent
+						rectangle vrt_parent{parent->pos_root, parent->dimension};
+
+						point pos_root;
+						while (parent->parent)
+						{
+							pos_root -= native_interface::window_position(parent->root);
+
+							if (!overlap(rectangle{ pos_root, parent->parent->root_widget->dimension }, vrt_parent, vrt_parent))
+								return false;
+
+							parent = parent->parent->root_widget;
+						}
+
+						if (!overlap(vrt_parent, visual, visual))
+							return false;
+						
+						return true;
+					}
+
+					if (!overlap(rectangle{ parent->pos_root, parent->dimension }, visual, visual))
+						return false;
 				}
 
 				return true;
@@ -221,8 +244,8 @@ namespace nana
 							continue;
 
 						core_window_t * term = ((i + 1 != layers_rend) ? *(i + 1) : wd);
-						r.x = wd->pos_root.x - pre->pos_root.x;
-						r.y = wd->pos_root.y - pre->pos_root.y;
+						r.position(wd->pos_root - pre->pos_root);
+
 						for (auto child : pre->children)
 						{
 							if (child->index >= term->index)
@@ -253,10 +276,10 @@ namespace nana
 					if (child->visible && overlap(r_of_wd, rectangle{ child->pos_owner, child->dimension }, ovlp))
 					{
 						if (category::flags::lite_widget != child->other.category)
-							glass_buffer.bitblt(nana::rectangle{ ovlp.x - wd->pos_owner.x, ovlp.y - wd->pos_owner.y, ovlp.width, ovlp.height }, child->drawer.graphics, nana::point(ovlp.x - child->pos_owner.x, ovlp.y - child->pos_owner.y));
+							glass_buffer.bitblt(nana::rectangle{ ovlp.x - wd->pos_owner.x, ovlp.y - wd->pos_owner.y, ovlp.width, ovlp.height }, child->drawer.graphics, {ovlp.position() - child->pos_owner});
 
-						ovlp.x += wd->pos_root.x;
-						ovlp.y += wd->pos_root.y;
+						ovlp.x += wd->parent->pos_root.x;
+						ovlp.y += wd->parent->pos_root.y;
 						_m_paste_children(child, false, false, ovlp, glass_buffer, rpos);
 					}
 				}
@@ -265,9 +288,7 @@ namespace nana
 					wd->effect.bground->take_effect(reinterpret_cast<window>(wd), glass_buffer);
 			}
 
-			//_m_paste_children
-			//@brief:paste children window to the root graphics directly. just paste the visual rectangle
-			void window_layout::_m_paste_children(core_window_t* wd, bool is_child_refreshed, bool have_refreshed, const nana::rectangle& parent_rect, nana::paint::graphics& graph, const nana::point& graph_rpos)
+			void window_layout::_m_paste_children(core_window_t* wd, bool have_refreshed, bool req_refresh_children, const nana::rectangle& parent_rect, nana::paint::graphics& graph, const nana::point& graph_rpos)
 			{
 				nana::rectangle rect;
 				for (auto child : wd->children)
@@ -278,7 +299,7 @@ namespace nana
 
 					if (category::flags::root == child->other.category)
 					{
-						paint(child, is_child_refreshed, is_child_refreshed);
+						paint(child, (req_refresh_children ? paint_operation::try_refresh : paint_operation::none), req_refresh_children);
 						continue;
 					}
 
@@ -286,12 +307,10 @@ namespace nana
 					{
 						if (overlap(nana::rectangle{ child->pos_root, child->dimension }, parent_rect, rect))
 						{
-							bool have_child_refreshed = false;
 							if (category::flags::lite_widget != child->other.category)
 							{
-								if (is_child_refreshed && (false == child->flags.refreshing))
+								if (req_refresh_children && (false == child->flags.refreshing))
 								{
-									have_child_refreshed = true;
 									child->flags.refreshing = true;
 									child->drawer.refresh();
 									child->flags.refreshing = false;
@@ -300,13 +319,15 @@ namespace nana
 								graph.bitblt(nana::rectangle(rect.x - graph_rpos.x, rect.y - graph_rpos.y, rect.width, rect.height),
 									child->drawer.graphics, nana::point(rect.x - child->pos_root.x, rect.y - child->pos_root.y));
 							}
-							_m_paste_children(child, is_child_refreshed, have_child_refreshed, rect, graph, graph_rpos);
+							//req_refresh_children determines whether the child has been refreshed, and also determines whether
+							//the children of child to be refreshed.
+							_m_paste_children(child, req_refresh_children, req_refresh_children, rect, graph, graph_rpos);
 						}
 					}
 					else
 					{
-						//If have_refreshed, the glass should be notified.
-						_m_paint_glass_window(child, false, is_child_refreshed, have_refreshed, false);
+						//Update the glass window's background if the parent have_refreshed.
+						_m_paint_glass_window(child, have_refreshed, req_refresh_children, true, false);
 					}
 				}
 			}
@@ -353,16 +374,14 @@ namespace nana
 					}
 
 					if (notify_other)
-						_m_notify_glasses(wd, vr);
+						_m_notify_glasses(wd);
 				}
 			}
 
-			//_m_notify_glasses
-			//@brief:	Notify the glass windows that are overlapped with the specified vis_rect
-			void window_layout::_m_notify_glasses(core_window_t* const sigwd, const nana::rectangle& /*r_visual*/)
+			/// Notify the glass windows that are overlapped with the specified visual rectangle.
+			/// If a child window of sigwd is a glass window, it doesn't to be notified.
+			void window_layout::_m_notify_glasses(core_window_t* const sigwd)
 			{
-				typedef category::flags cat_flags;
-
 				nana::rectangle r_of_sigwd(sigwd->pos_root, sigwd->dimension);
 				for (auto wd : data_sect.effects_bground_windows)
 				{
@@ -377,6 +396,8 @@ namespace nana
 					}
 					else if (sigwd != wd->parent)
 					{
+						using cat_flags = category::flags;
+
 						if (wd->parent && (cat_flags::lite_widget == wd->parent->other.category))
 						{
 							//Test if sigwd is an ancestor of the glass window, and there are lite widgets

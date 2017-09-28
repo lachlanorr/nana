@@ -237,9 +237,9 @@ namespace nana
 			return this->get_drawer_trigger().activated();
 		}
 
-		value_type & at(std::size_t pos) const        /// Returns pos'th element
+		value_type const & at(std::size_t pos) const        /// Returns pos'th element
 		{
-			return static_cast<value_type&>(this->get_drawer_trigger().at(pos));
+			return any_cast<value_type&>(this->get_drawer_trigger().at(pos));
 		}
 
 		void close_fly(bool fly)                    /// Draw or not a close button in each tab.
@@ -248,7 +248,7 @@ namespace nana
 				API::refresh_window(this->handle());
 		}
 
-		pat::cloneable<item_renderer>& renderer() const
+		const pat::cloneable<item_renderer>& renderer() const
 		{
 			return this->get_drawer_trigger().ext_renderer();
 		}

@@ -276,8 +276,7 @@ namespace nana
 				if(ch <= 0x1CC7) return L;	//N = 141
 				if(0x1CD3 == ch || 0x1CE1 == ch) return L;
 				if(ch <= 0x1CE8) return NSM;	//N = 7
-				if(0x1CED == ch) return NSM;
-				if(0x1CF4 == ch) return NSM;
+				if(0x1CED == ch || 0x1CF4 == ch) return NSM;
 				if(ch <= 0x1DBF) return L;	//N = 203
 				if(ch <= 0x1DFF) return NSM;	//N = 64
 				if(ch <= 0x1FBC) return L;	//N = 445
@@ -504,21 +503,21 @@ namespace nana
 	}
 
 	//class unicode_bidi
-		void unicode_bidi::linestr(const char_type* str, std::size_t len, std::vector<entity> & reordered)
+		std::vector<unicode_bidi::entity> unicode_bidi::reorder(const char_type* str, std::size_t len)
 		{
 			levels_.clear();
 			const char_type * const end = str + len;
 
 			std::vector<remember> stack;
-			
-			remember cur = {0, directional_override_status::neutral};
+
+			remember cur = { 0, directional_override_status::neutral };
 			cur.level = _m_paragraph_level(str, end);
 
 			//First character type
-			bidi_char begin_char_type;
+			bidi_char begin_char_type = {};
 			const char_type * begin_character = nullptr;
 
-			for(const char_type * c = str; c < end; ++c)
+			for (const char_type * c = str; c < end; ++c)
 			{
 				if (PDF == *c)
 				{
@@ -536,7 +535,8 @@ namespace nana
 				}
 				else if (LRE <= *c && *c <= RLO)
 				{
-					stack.push_back(cur);
+					stack.emplace_back(cur);
+
 					if (begin_character)
 					{
 						_m_push_entity(begin_character, c, cur.level, begin_char_type);
@@ -578,13 +578,17 @@ namespace nana
 					begin_character = c;
 				}
 			}
-			if(begin_character)
+			if (begin_character)
 				_m_push_entity(begin_character, end, cur.level, begin_char_type);
 
 			_m_resolve_weak_types();
 			_m_resolve_neutral_types();
 			_m_resolve_implicit_levels();
+
+			std::vector<unicode_bidi::entity> reordered;
 			_m_reordering_resolved_levels(reordered);
+
+			return reordered;
 		}
 
 		unsigned unicode_bidi::_m_paragraph_level(const char_type * begin, const char_type * end)
@@ -607,12 +611,13 @@ namespace nana
 
 		void unicode_bidi::_m_push_entity(const char_type * begin, const char_type *end, unsigned level, bidi_char bidi_char_type)
 		{
-			entity e;
+			levels_.emplace_back();
+			auto & e = levels_.back();
 			e.begin = begin;
 			e.end = end;
 			e.level = level;
 			e.bidi_char_type = bidi_char_type;
-			levels_.push_back(e);
+
 		}
 
 		std::vector<unicode_bidi::entity>::iterator unicode_bidi::_m_search_first_character()
@@ -620,6 +625,7 @@ namespace nana
 			return levels_.begin();
 		}
 
+	
 		auto unicode_bidi::_m_eor(std::vector<entity>::iterator i) ->bidi_char
 		{
 			const auto end = levels_.end();
@@ -808,7 +814,7 @@ namespace nana
 			//N1. A sequence of neutrals takes the direction of the surrounding strong text if the text on both sides has the same direction.
 			//European and Arabic numbers act as if they were R in terms of their influence on neutrals.
 			//Start-of-level-run (sor) and end-of-level-run (eor) are used at level run boundaries.
-			bidi_char left;
+			bidi_char left = {};
 			for(auto i = begin_character; i != end; ++i)
 			{
 				if(level_of_run != i->level)
@@ -935,4 +941,9 @@ namespace nana
 			return static_cast<bidi_char>(static_cast<int>(type - bidi_charmap::B) + 0x2000);
 		}
 	//end class unicode_bidi
+
+	std::vector<unicode_bidi::entity> unicode_reorder(const wchar_t* text, std::size_t length)
+	{
+		return unicode_bidi{}.reorder(text, length);
+	}
 }//end namespace nana
